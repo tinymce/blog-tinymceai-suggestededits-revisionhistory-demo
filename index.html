@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Review Demo</title>
+  <!-- TinyMCE Cloud script -->
+  <script src="https://cdn.tiny.cloud/1/q6kaj77juh3j9n7v36jmpufbn3nw91snle0zdwgl8cao2yng/tinymce/8/tinymce.min.js" referrerpolicy="origin"></script>
+  <style>
+    body { font-family: Helvetica Neue, sans-serif; margin: 20px; }
+    #user-switcher { margin-bottom: 10px; }
+    #user-switcher label { font-weight: bold; margin-right: 8px; }
+    #editor-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 8px 0 12px;
+    }
+    #saveButton {
+      padding: 6px 10px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #saveStatus {
+      font-size: 12px;
+      color: #475569;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="user-switcher">
+    <label for="userSelect">Active user:</label>
+    <select id="userSelect">
+      <option value="spiderman">Spider-Man</option>
+      <option value="docock">Doc Oc</option>
+      <option value="shehulk">She-Hulk</option>
+      <option value="spidergwen">Spider-Gwen</option>
+    </select>
+  </div>
+
+  <div id="editor-actions">
+    <button type="button" id="saveButton">Save Draft</button>
+    <span id="saveStatus" aria-live="polite"></span>
+  </div>
+
+  <textarea id="editor">
+    <h2>Supersuit Fashion Event Invitation</h2>
+    <img src="imgs/Fashion-model.jpg" alt="Fashion Model" width="50%">
+    <p>Attention all superheroes: you’re invited to the city’s most dazzling Supersuit Fashion Event this Friday at the Skyline Pavilion. Bring your boldest cape, sharpest mask, and most iconic look for a night of runway reveals, hero meetups, and style inspiration.</p>
+    <p>Doors open at 7:00 PM, and every power level is welcome. Come ready to strut, swap tips, and show off the suit that makes you shine.</p>
+  </textarea>
+
+  <script>
+    // Shared demo user directory - used by fetch_users (Suggested Edits + User Lookup API)
+    // and as the author on each mock revision below (Revision History).
+    const userDb = {
+      spiderman: { id: 'spiderman', name: 'Spider-Man', avatar: 'imgs/spiderman.jpg' },
+      docock: { id: 'docock', name: 'Doc Ock', avatar: 'imgs/dockock.jpg' },
+      shehulk: { id: 'shehulk', name: 'She-Hulk', avatar: 'imgs/shehulk.jpg' },
+      spidergwen: { id: 'spidergwen', name: 'Spider-Gwen', avatar: 'imgs/spider-gwen.png' }
+    };
+
+    const fetch_users = (ids) => Promise.resolve(ids.map((id) => userDb[id] || { id }));
+
+    // --- Revision History: mock saved revisions ---
+    // In production, revisionhistory_fetch would call your API instead of reading this array.
+    const revisions = [
+      {
+        revisionId: '3',
+        createdAt: '2026-07-10T09:15:00.000Z',
+        author: userDb.docock,
+        content: `
+          <h2>Supersuit Fashion Event Invitation</h2>
+          <p>Attention all superheroes: you’re invited to the city’s most dazzling Supersuit Fashion Event this Friday at the Skyline Pavilion. Bring your boldest cape, sharpest mask, and most iconic look for a night of runway reveals, hero meetups, and style inspiration.</p>
+          <p>Doors open at 7:00 PM, and every power level is welcome. Come ready to strut, swap tips, and show off the suit that makes you shine.</p>
+        `
+      },
+      {
+        revisionId: '2',
+        createdAt: '2026-07-11T13:40:00.000Z',
+        author: userDb.shehulk,
+        content: `
+          <h2>Supersuit Fashion Event Invitation</h2>
+          <p>Join the city’s premier Supersuit Fashion Event for a night of heroic glamour, runway reveals, and high-style costume inspiration.</p>
+          <p>Whether you’re known for a classic cape or a cutting-edge combat look, this is your chance to celebrate the suits that make every hero unforgettable.</p>
+        `
+      },
+      {
+        revisionId: '1',
+        createdAt: '2026-07-13T08:05:00.000Z',
+        author: userDb.spidergwen,
+        content: `
+          <h2>Supersuit Fashion Event Invitation</h2>
+          <p>Superheroes, assemble for the annual Supersuit Fashion Event at the Skyline Pavilion. Expect a runway packed with bold colors, signature accessories, and the most stylish costumes in the city.</p>
+          <p>Bring your best hero look and help us make this a night to remember.</p>
+        `
+      }
+    ];
+
+    const getRandomDelay = () => Math.floor(Math.random() * 1500) + 500; // 500ms - 2s, simulates a real API call
+
+    const revisionhistory_fetch = () => new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(
+          revisions
+            .sort((a, b) => (new Date(a.createdAt) < new Date(b.createdAt) ? -1 : 1))
+            .reverse()
+        );
+      }, getRandomDelay());
+    });
+
+    // --- Suggested Edits: model persists across user switches so suggestions aren't lost ---
+    const userSelect = document.getElementById('userSelect');
+    const saveButton = document.getElementById('saveButton');
+    const saveStatus = document.getElementById('saveStatus');
+    let currentUserId = userSelect.value;
+    let editorInstance = null;
+    let suggestedEditsModel = null;
+
+    const draftStorageKey = (userId) => `tinymce-demo-draft-${userId}`;
+
+    const getStoredDraft = (userId) => {
+      try {
+        return localStorage.getItem(draftStorageKey(userId));
+      } catch (error) {
+        return null;
+      }
+    };
+
+    const saveDraft = (userId, content) => {
+      try {
+        localStorage.setItem(draftStorageKey(userId), content);
+        saveStatus.textContent = 'Draft saved locally';
+      } catch (error) {
+        saveStatus.textContent = 'Save failed';
+      }
+    };
+
+    const restoreDraft = (editor, userId) => {
+      const savedDraft = getStoredDraft(userId);
+      if (savedDraft) {
+        editor.setContent(savedDraft);
+        saveStatus.textContent = 'Saved draft restored';
+      }
+    };
+
+    function initEditor(userId) {
+      if (editorInstance) {
+        suggestedEditsModel = editorInstance.plugins.suggestededits.getModel();
+        tinymce.remove(editorInstance);
+      }
+
+      tinymce.init({
+        selector: '#editor',
+        height: 600,
+        plugins: 'tinymceai lists link table code help wordcount revisionhistory suggestededits',
+        toolbar: 'undo redo | tinymceai-chat tinymceai-quickactions tinymceai-review | blocks | bold italic | bullist numlist | outdent indent | link unlink | table tableprops tabledelete | code help | revisionhistory suggestededits',
+        sidebar_show: 'tinymceai-chat',
+
+        tinymceai_token_provider: async () => {
+          await fetch('https://demo.api.tiny.cloud/1/q6kaj77juh3j9n7v36jmpufbn3nw91snle0zdwgl8cao2yng/auth/random', { method: "POST", credentials: "include" });
+          return { token: await fetch('https://demo.api.tiny.cloud/1/q6kaj77juh3j9n7v36jmpufbn3nw91snle0zdwgl8cao2yng/jwt/tinymceai', { credentials: "include" }).then(r => r.text()) };
+        },
+
+        // Revision History
+        revisionhistory_fetch,
+        revisionhistory_display_author: true,
+
+        // Suggested Edits
+        suggestededits_model: suggestedEditsModel,
+
+        // Shared User Lookup config (current user identity, used by Suggested Edits + Revision History)
+        user_id: userId,
+        fetch_users,
+
+        setup: (editor) => {
+          editorInstance = editor;
+          restoreDraft(editor, userId);
+
+          let saveTimer = null;
+          editor.on('change', () => {
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => {
+              saveDraft(userId, editor.getContent());
+            }, 300);
+          });
+        }
+      });
+    }
+
+    saveButton.addEventListener('click', () => {
+      if (editorInstance) {
+        saveDraft(currentUserId, editorInstance.getContent());
+      }
+    });
+
+    userSelect.addEventListener('change', () => {
+      currentUserId = userSelect.value;
+      initEditor(currentUserId);
+    });
+
+    initEditor(currentUserId);
+  </script>
+</body>
+</html>
