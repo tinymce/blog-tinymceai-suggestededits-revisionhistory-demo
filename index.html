@@ -166,6 +166,19 @@
         // Shared User Lookup config (current user identity, used by Suggested Edits + Revision History)
         user_id: userId,
         fetch_users,
+
+        setup: (editor) => {
+          editorInstance = editor;
+          restoreDraft(editor, userId);
+
+          let saveTimer = null;
+          editor.on('change', () => {
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => {
+              saveDraft(userId, editor.getContent());
+            }, 300);
+          });
+        },
       });
     }
 
